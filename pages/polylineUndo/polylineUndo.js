@@ -1,5 +1,8 @@
 import Stack from './stack';
 import Konva from "konva";
+
+import UndoManager from './UndoManager';
+import Command from './Command';
 import { createMachine, interpret } from "xstate";
 
 const stage = new Konva.Stage({
@@ -8,10 +11,15 @@ const stage = new Konva.Stage({
     height: 400,
 });
 
+const buttonUndo = document.getElementById("undo")
+
+const buttonRedo = document.getElementById("redo")
+const undoManager = new UndoManager()
 // Une couche pour le dessin
 const dessin = new Konva.Layer();
-// Une couche pour la polyline en cours de construction
 const temporaire = new Konva.Layer();
+// Une couche pour la polyline en cours de construction
+
 stage.add(dessin);
 stage.add(temporaire);
 
@@ -30,6 +38,19 @@ const polylineMachine = createMachine(
                         target: "onePoint",
                         actions: "createLine",
                     },
+                    UNDO: {
+                        target: "idle",
+                        actions: "undo",
+                        internal: true,
+                        cond: "canUndo"
+                    },
+
+                    REDO: {
+                        target: "idle",
+                        actions: "redo",
+                        internal: true,
+                        cond: "canRedo"
+                    }
                 },
             },
             onePoint: {
@@ -86,12 +107,15 @@ const polylineMachine = createMachine(
                             actions: "removeLastPoint",
                         },
                     ],
+                    
+
+        
                 },
             },
         },
     },
     {
-        actions: {
+       actions: {
             createLine: (context, event) => {
                 const pos = stage.getPointerPosition();
                 polyline = new Konva.Line({
@@ -119,7 +143,8 @@ const polylineMachine = createMachine(
                 polyline.points(newPoints);
                 polyline.stroke("black"); // On change la couleur
                 // On sauvegarde la polyline dans la couche de dessin
-                dessin.add(polyline); // On l'ajoute à la couche de dessin
+                buttonUndo.disabled = false;
+                undoManager.execute(new Command(dessin, polyline))
             },
             addPoint: (context, event) => {
                 const pos = stage.getPointerPosition();
@@ -139,6 +164,21 @@ const polylineMachine = createMachine(
                 polyline.points(oldPoints.concat(provisoire)); // Set the updated points to the line
                 temporaire.batchDraw(); // Redraw the layer to reflect the changes
             },
+            undo: (context, event) => {
+                undoManager.undo()
+                if(!undoManager.canUndo()){
+                    buttonUndo.disabled = true;
+                }
+                buttonRedo.disabled = false;
+            },
+           
+            redo: (context, event) => {
+                undoManager.redo()
+                if(!undoManager.canRedo()){
+                    buttonRedo.disabled = true;
+                }
+                buttonUndo.disabled = false;
+            },
         },
         guards: {
             pasPlein: (context, event) => {
@@ -148,6 +188,14 @@ const polylineMachine = createMachine(
             plusDeDeuxPoints: (context, event) => {
                 // Deux coordonnées pour chaque point, plus le point provisoire
                 return polyline.points().length > 6;
+            },
+            canUndo: (context, event) => {
+                // Deux coordonnées pour chaque point, plus le point provisoire
+                return undoManager.canUndo();
+            },
+            canRedo: (context, event) => {
+                // Deux coordonnées pour chaque point, plus le point provisoire
+                return undoManager.canRedo();
             },
         },
     }
@@ -165,6 +213,13 @@ stage.on("click", () => {
 
 stage.on("mousemove", () => {
     polylineService.send("MOUSEMOVE");
+});
+buttonUndo.addEventListener("click", () => {
+    polylineService.send("UNDO");
+});
+
+buttonRedo.addEventListener("click", () => {
+    polylineService.send("REDO");
 });
 
 window.addEventListener("keydown", (event) => {

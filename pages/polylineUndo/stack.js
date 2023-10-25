@@ -18,6 +18,12 @@ class Stack {
     isEmpty() {
         return this.stack.length === 0;
     }
+    clear() {
+        this.items = [];
+    }
+    size() {
+            return this.stack.length;
+    }
 }
 
 export default Stack;
